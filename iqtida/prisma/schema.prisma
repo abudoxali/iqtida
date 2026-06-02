@@ -1,0 +1,408 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  REVIEWER
+}
+
+enum HadithGrade {
+  SAHIH
+  HASAN
+  DAIF
+  MAUDHU
+  NO_ORIGIN
+  UNVERIFIED
+}
+
+enum EvidenceStatus {
+  SAHIH
+  HASAN
+  DAIF
+  NOT_PROVEN
+  SCHOLARLY_DIFFERENCE
+  CUSTOM
+  HABIT
+}
+
+enum DayMoment {
+  WAKE_UP
+  WUDHU_PRAYER
+  MORNING
+  LEAVING_HOME
+  FOOD_DRINK
+  INTERACTION
+  WORK_STUDY
+  ANGER_DISTRESS
+  EVENING
+  BEFORE_SLEEP
+  NIGHT_WAKE
+}
+
+enum CategoryType {
+  WORSHIP
+  HABIT
+  MANNERS
+  REMEMBRANCE
+  TRANSACTION
+}
+
+enum AnswerType {
+  YES_PROVEN
+  HASAN_CHAIN
+  NOT_AUTHENTIC
+  NOT_IN_DB
+  SCHOLARLY_DIFFERENCE
+  CUSTOM_HABIT
+  NEEDS_CLARIFICATION
+}
+
+enum ReviewStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EntityType {
+  HADITH
+  SUNNAH_PRACTICE
+  QUESTION_ANSWER
+}
+
+enum QuestionStatus {
+  PENDING
+  ANSWERED
+  IGNORED
+  NEEDS_SCHOLAR
+}
+
+model User {
+  id             String   @id @default(uuid()) @map("_id")
+  name           String?
+  email          String   @unique
+  passwordHash   String?
+  image          String?
+  role           Role     @default(USER)
+  streak         Int      @default(0)
+  lastActiveDate DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  progresses        UserProgress[]
+  savedItems        SavedItem[]
+  auditLogs         AuditLog[]
+  accounts          Account[]
+  sessions          Session[]
+  questionAnswers   QuestionAnswer[]
+  unansweredQuestions UnansweredQuestion[]
+  reviews           ContentReview[]
+  notificationPreference NotificationPreference?
+  activities        UserActivity[]
+  reviewedHadiths      Hadith[]               @relation("HadithReviewer")
+  reviewedSunnahs      SunnahPractice[]       @relation("SunnahReviewer")
+  reviewedAnswers      QuestionAnswer[]       @relation("AnswerReviewer")
+}
+
+model Account {
+  id                String  @id @default(uuid()) @map("_id")
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(uuid()) @map("_id")
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Hadith {
+  id                String       @id @default(uuid()) @map("_id")
+  arabicText        String       @db.Text
+  sourceBook        String?
+  sourceChapter     String?
+  hadithNumber      String?
+  grade             HadithGrade
+  gradingSource     String?
+  explanation       String?      @db.Text
+  notes             String?      @db.Text
+  tags              String?
+  reviewStatus      ReviewStatus @default(DRAFT)
+  reviewedById      String?
+  reviewedAt        DateTime?
+  publishedAt       DateTime?
+  sourceId          String?
+  locale            String?      @default("ar")
+  reportCount       Int          @default(0)
+  authenticityGrade String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  reviewedBy       User?            @relation("HadithReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  sourceRef        Source?          @relation("HadithSource", fields: [sourceId], references: [id], onDelete: SetNull)
+  sunnahPractices  SunnahPractice[]
+  questionAnswers  QuestionAnswer[]
+  savedItems       SavedItem[]
+
+  @@index([grade])
+  @@index([reviewStatus])
+  @@index([sourceBook])
+  @@index([sourceId])
+  @@index([reviewedById])
+}
+
+model SunnahPractice {
+  id              String        @id @default(uuid()) @map("_id")
+  title           String
+  description     String?       @db.Text
+  category        CategoryType
+  dayMoment       DayMoment?
+  evidenceStatus  EvidenceStatus
+  hadithId        String?
+  practicalSteps  String?       @db.Text
+  commonMistakes  String?       @db.Text
+  isWorship       Boolean       @default(false)
+  isHabit         Boolean       @default(false)
+  difficulty      String?
+  estimatedTime   String?
+  published       Boolean       @default(false)
+  reviewStatus    ReviewStatus  @default(DRAFT)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  publishedAt     DateTime?
+  sourceId        String?
+  estimatedMinutes Int?
+  tags            String?
+  locale          String?       @default("ar")
+  reportCount     Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  hadith          Hadith?         @relation(fields: [hadithId], references: [id], onDelete: SetNull)
+  reviewedBy      User?           @relation("SunnahReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  source          Source?         @relation("SunnahSource", fields: [sourceId], references: [id], onDelete: SetNull)
+  userProgresses  UserProgress[]
+  savedItems      SavedItem[]
+  dailySunnahs    DailySunnah[]
+
+  @@index([category])
+  @@index([dayMoment])
+  @@index([reviewStatus])
+  @@index([published])
+  @@index([category, dayMoment])
+  @@index([sourceId])
+  @@index([reviewedById])
+}
+
+model QuestionAnswer {
+  id                  String       @id @default(uuid()) @map("_id")
+  question            String       @db.Text
+  normalizedQuestion  String?      @db.Text
+  answerType          AnswerType
+  shortAnswer         String?      @db.Text
+  detailedAnswer      String?      @db.Text
+  hadithId            String?
+  explanation         String?      @db.Text
+  practicalApplication String?     @db.Text
+  warning             String?      @db.Text
+  confidence          Float?
+  askedByUserId       String?
+  reviewStatus        ReviewStatus @default(DRAFT)
+  reviewedById        String?
+  reviewedAt          DateTime?
+  publishedAt         DateTime?
+  sourceId            String?
+  locale              String?      @default("ar")
+  reportCount         Int          @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  hadith     Hadith?    @relation(fields: [hadithId], references: [id], onDelete: SetNull)
+  askedByUser User?     @relation(fields: [askedByUserId], references: [id], onDelete: SetNull)
+  reviewedBy  User?     @relation("AnswerReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  source      Source?   @relation("AnswerSource", fields: [sourceId], references: [id], onDelete: SetNull)
+  savedItems SavedItem[]
+
+  @@index([answerType])
+  @@index([askedByUserId])
+  @@index([sourceId])
+  @@index([reviewedById])
+}
+
+model UserProgress {
+  id               String   @id @default(uuid()) @map("_id")
+  userId           String
+  sunnahPracticeId String
+  date             DateTime
+  completed        Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sunnahPractice SunnahPractice @relation(fields: [sunnahPracticeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sunnahPracticeId, date])
+  @@index([userId])
+  @@index([sunnahPracticeId])
+  @@index([date])
+  @@index([userId, date])
+}
+
+model SavedItem {
+  id               String   @id @default(uuid()) @map("_id")
+  userId           String
+  type             String
+  hadithId         String?
+  sunnahPracticeId String?
+  answerId         String?
+  createdAt        DateTime @default(now())
+
+  user           User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hadith         Hadith?          @relation(fields: [hadithId], references: [id], onDelete: Cascade)
+  sunnahPractice SunnahPractice?  @relation(fields: [sunnahPracticeId], references: [id], onDelete: Cascade)
+  answer         QuestionAnswer?  @relation(fields: [answerId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([userId, type])
+}
+
+model DailySunnah {
+  id               String   @id @default(uuid()) @map("_id")
+  sunnahPracticeId String
+  date             DateTime
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  sunnahPractice SunnahPractice @relation(fields: [sunnahPracticeId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([sunnahPracticeId, date])
+}
+
+model Category {
+  id          String   @id @default(uuid()) @map("_id")
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+}
+
+model Source {
+  id               String  @id @default(uuid()) @map("_id")
+  name             String
+  author           String?
+  type             String?
+  reliabilityLevel String?
+  notes            String? @db.Text
+  createdAt        DateTime @default(now())
+
+  hadiths          Hadith[]         @relation("HadithSource")
+  sunnahs          SunnahPractice[] @relation("SunnahSource")
+  answers          QuestionAnswer[] @relation("AnswerSource")
+}
+
+model AuditLog {
+  id         String     @id @default(uuid()) @map("_id")
+  userId     String
+  action     String
+  entityType EntityType
+  entityId   String?
+  details    String?    @db.Text
+  createdAt  DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([action])
+}
+
+model UnansweredQuestion {
+  id              String         @id @default(uuid()) @map("_id")
+  question        String         @db.Text
+  askedByUserId   String?
+  status          QuestionStatus @default(PENDING)
+  suggestedSources String?       @db.Text
+  adminNotes      String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  askedByUser User? @relation(fields: [askedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([askedByUserId])
+}
+
+model ContentReview {
+  id           String       @id @default(uuid()) @map("_id")
+  entityType   EntityType
+  entityId     String
+  reviewedById String
+  status       ReviewStatus
+  notes        String?      @db.Text
+  createdAt    DateTime     @default(now())
+
+  reviewedBy   User         @relation(fields: [reviewedById], references: [id], onDelete: Cascade)
+  @@index([entityId])
+  @@index([reviewedById])
+}
+
+model NotificationPreference {
+  id              String   @id @default(uuid()) @map("_id")
+  userId          String   @unique
+  morningSunnah   Boolean  @default(true)
+  eveningSunnah   Boolean  @default(true)
+  sleepSunnah     Boolean  @default(true)
+  dailyHadith     Boolean  @default(true)
+  remindersActive Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserActivity {
+  id        String   @id @default(uuid()) @map("_id")
+  userId    String
+  activity  String   // "LOGIN", "COMPLETE_SUNNAH", "ASK_QUESTION"
+  details   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
