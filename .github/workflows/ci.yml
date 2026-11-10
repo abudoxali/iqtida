@@ -107,16 +107,17 @@ jobs:
 
       # Generate before typecheck and build. @prisma/client types are not
       # committed; they are created from iqtida/prisma/schema.prisma.
-      # These steps still run when lint fails so the log shows every check.
-      # A lint failure still fails the job.
+      # success() || failure() is required. A bare outcome check is ANDed
+      # with success(), so a lint failure would skip these steps. Lint still
+      # fails the job. Cancel, or a skipped lint step, does not run them.
       - name: Prisma generate
-        if: ${{ steps.lint.outcome == 'success' || steps.lint.outcome == 'failure' }}
+        if: ${{ (success() || failure()) && (steps.lint.outcome == 'success' || steps.lint.outcome == 'failure') }}
         run: npx prisma generate
 
       - name: Typecheck
-        if: ${{ steps.lint.outcome == 'success' || steps.lint.outcome == 'failure' }}
+        if: ${{ (success() || failure()) && (steps.lint.outcome == 'success' || steps.lint.outcome == 'failure') }}
         run: npx tsc --noEmit
 
       - name: Build
-        if: ${{ steps.lint.outcome == 'success' || steps.lint.outcome == 'failure' }}
+        if: ${{ (success() || failure()) && (steps.lint.outcome == 'success' || steps.lint.outcome == 'failure') }}
         run: npm run build
