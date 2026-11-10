@@ -1,0 +1,123 @@
+# Install, lint, typecheck, Prisma client generation, and production build
+# for the Next.js app in iqtida/. Lockfile detection is scoped to that
+# directory (the repo root has no package.json).
+#
+# Env values below are non-secret placeholders so Prisma and Next can load
+# config. They are not credentials for any real database or deployment.
+
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: iqtida
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/iqtida
+      AUTH_SECRET: ci-only-placeholder-not-a-real-secret
+      AUTH_URL: http://127.0.0.1:3000
+      NEXTAUTH_SECRET: ci-only-placeholder-not-a-real-secret
+      NEXTAUTH_URL: http://127.0.0.1:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect package manager
+        id: detect-package-manager
+        working-directory: iqtida
+        run: |
+          set -eu
+          count=0
+          manager=""
+          lockfile=""
+          if [ -f package-lock.json ]; then
+            count=$((count + 1))
+            manager="npm"
+            lockfile="iqtida/package-lock.json"
+          fi
+          if [ -f pnpm-lock.yaml ]; then
+            count=$((count + 1))
+            manager="pnpm"
+            lockfile="iqtida/pnpm-lock.yaml"
+          fi
+          if [ -f yarn.lock ]; then
+            count=$((count + 1))
+            manager="yarn"
+            lockfile="iqtida/yarn.lock"
+          fi
+          if [ -f bun.lock ] || [ -f bun.lockb ]; then
+            count=$((count + 1))
+            manager="bun"
+            lockfile="iqtida/bun.lock"
+          fi
+          if [ "$count" -eq 0 ]; then
+            echo "No lockfile in iqtida/. Refusing to guess a package manager."
+            exit 1
+          fi
+          if [ "$count" -ne 1 ]; then
+            echo "Multiple lockfiles in iqtida/. Refusing to guess a package manager."
+            exit 1
+          fi
+          echo "manager=${manager}" >> "$GITHUB_OUTPUT"
+          echo "lockfile=${lockfile}" >> "$GITHUB_OUTPUT"
+          echo "Detected ${manager} from ${lockfile}"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: ${{ steps.detect-package-manager.outputs.manager }}
+          cache-dependency-path: ${{ steps.detect-package-manager.outputs.lockfile }}
+
+      - name: Install dependencies
+        run: |
+          set -eu
+          case "${{ steps.detect-package-manager.outputs.manager }}" in
+            npm) npm ci ;;
+            pnpm)
+              corepack enable
+              pnpm install --frozen-lockfile
+              ;;
+            yarn)
+              corepack enable
+              yarn install --frozen-lockfile
+              ;;
+            *)
+              echo "Unsupported package manager: ${{ steps.detect-package-manager.outputs.manager }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Lint
+        id: lint
+        run: npm run lint
+
+      # Generate before typecheck and build. @prisma/client types are not
+      # committed; they are created from iqtida/prisma/schema.prisma.
+      # success() || failure() is required. A bare outcome check is ANDed
+      # with success(), so a lint failure would skip these steps. Lint still
+      # fails the job. Cancel, or a skipped lint step, does not run them.
+      - name: Prisma generate
+        if: ${{ (success() || failure()) && (steps.lint.outcome == 'success' || steps.lint.outcome == 'failure') }}
+        run: npx prisma generate
+
+      - name: Typecheck
+        if: ${{ (success() || failure()) && (steps.lint.outcome == 'success' || steps.lint.outcome == 'failure') }}
+        run: npx tsc --noEmit
+
+      - name: Build
+        if: ${{ (success() || failure()) && (steps.lint.outcome == 'success' || steps.lint.outcome == 'failure') }}
+        run: npm run build

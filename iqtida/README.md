@@ -118,20 +118,13 @@ Seed data is marked as `needs_review`. All religious content must be verified by
 
 ## Deployment
 
-### Vercel
+GitHub Pages cannot host this app. The site needs a Node.js server (Next.js route handlers, Server Actions, NextAuth, Prisma) and PostgreSQL. Use a Node host such as Vercel, or a container host, with managed Postgres.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+`auth()` in `src/lib/auth.ts` currently returns a hard-coded `ADMIN` guest for every caller. Replace that stub before any public deployment.
 
-1. Connect your repository
-2. Set environment variables
-3. Deploy
+Environment variable names only: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`. Auth.js also accepts `NEXTAUTH_SECRET` and `NEXTAUTH_URL`. Never commit values.
 
-### VPS
-
-```bash
-npm run build
-npm start
-```
+Details, including why `output: 'export'` is not viable: [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
 
 ## License
 
